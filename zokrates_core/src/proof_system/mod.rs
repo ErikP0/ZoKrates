@@ -34,5 +34,5 @@ pub trait ProofSystem {
         proving_key: Vec<u8>,
     ) -> String;
 
-    fn export_solidity_verifier(&self, vk: String, is_abiv2: bool, is_as_lib: bool) -> String;
+    fn export_solidity_verifier(&self, vk: String, is_abiv2: bool, is_as_lib: bool, emit_event: bool) -> String;
 }

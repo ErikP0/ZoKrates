@@ -59,7 +59,7 @@ impl ProofSystem for G16 {
         serialize::serialize_proof(&proof, &computation.public_inputs_values())
     }
 
-    fn export_solidity_verifier(&self, vk: String, is_abiv2: bool, is_as_lib: bool) -> String {
+    fn export_solidity_verifier(&self, vk: String, is_abiv2: bool, is_as_lib: bool, emit_event: bool) -> String {
         let mut lines = vk.lines();
 
         let (mut template_text, solidity_pairing_lib) = if is_abiv2 {
@@ -85,6 +85,9 @@ impl ProofSystem for G16 {
         let vk_input_len_regex = Regex::new(r#"(<%vk_input_length%>)"#).unwrap();
         let contract_or_library_regex = Regex::new(r#"<%contract_or_library%>"#).unwrap();
         let is_internal_regex = Regex::new(r#"<%is_internal%>"#).unwrap();
+        let verified_event_type_regex = Regex::new(r#"<%verified_event_type%>"#).unwrap();
+        let emit_verified_event_regex = Regex::new(r#"<%emit_verified_event%>"#).unwrap();
+        let verifyTx_mutability_regex = Regex::new(r#"<%verifyTx_mutability%>"#).unwrap();
 
         for _ in 0..4 {
             let current_line: &str = lines
@@ -155,6 +158,21 @@ impl ProofSystem for G16 {
             .replace(&template_text, is_internal_text)
             .into_owned();
 
+        let (verified_event_type_text, emit_verified_event_text, verifyTx_mutability_text) = if emit_event {
+            (VERIFIED_EVENT, EMIT_VERIFIED_EVENT, "")
+        } else {
+            ("", "", "view")
+        };
+        template_text = verified_event_type_regex
+            .replace(&template_text, verified_event_type_text)
+            .into_owned();
+        template_text = emit_verified_event_regex
+            .replace(&template_text, emit_verified_event_text)
+            .into_owned();
+        template_text = verifyTx_mutability_regex
+            .replace(&template_text, verifyTx_mutability_text)
+            .into_owned();
+
         format!(
             "{}{}{}",
             SOLIDITY_G2_ADDITION_LIB, solidity_pairing_lib, template_text
@@ -214,6 +232,9 @@ mod serialize {
     }
 }
 
+const VERIFIED_EVENT: &str = "event Verified(string s);";
+const EMIT_VERIFIED_EVENT: &str = r#"emit Verified("Transaction successfully verified.");"#;
+
 const CONTRACT_TEMPLATE_V2: &str = r#"
 <%contract_or_library%> Verifier {
     using Pairing for *;
@@ -255,17 +276,17 @@ const CONTRACT_TEMPLATE_V2: &str = r#"
              Pairing.negate(vk.a), vk.b)) return 1;
         return 0;
     }
-    event Verified(string s);
+    <%verified_event_type%>
     function verifyTx(
             Proof memory proof,
             uint[<%vk_input_length%>] memory input
-        ) <%is_internal%> returns (bool r) {
+        ) <%is_internal%> <%verifyTx_mutability%> returns (bool r) {
         uint[] memory inputValues = new uint[](input.length);
         for(uint i = 0; i < input.length; i++){
             inputValues[i] = input[i];
         }
         if (verify(inputValues, proof) == 0) {
-            emit Verified("Transaction successfully verified.");
+            <%emit_verified_event%>
             return true;
         } else {
             return false;
@@ -315,13 +336,13 @@ const CONTRACT_TEMPLATE: &str = r#"
              Pairing.negate(vk.a), vk.b)) return 1;
         return 0;
     }
-    event Verified(string s);
+    <%verified_event_type%>
     function verifyTx(
             uint[2] memory a,
             uint[2][2] memory b,
             uint[2] memory c,
             uint[<%vk_input_length%>] memory input
-        ) <%is_internal%> returns (bool r) {
+        ) <%is_internal%> <%verifyTx_mutability%> returns (bool r) {
         Proof memory proof;
         proof.a = Pairing.G1Point(a[0], a[1]);
         proof.b = Pairing.G2Point([b[0][0], b[0][1]], [b[1][0], b[1][1]]);
@@ -331,7 +352,7 @@ const CONTRACT_TEMPLATE: &str = r#"
             inputValues[i] = input[i];
         }
         if (verify(inputValues, proof) == 0) {
-            emit Verified("Transaction successfully verified.");
+            <%emit_verified_event%>
             return true;
         } else {
             return false;

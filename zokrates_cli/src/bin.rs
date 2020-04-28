@@ -153,7 +153,11 @@ fn cli() -> Result<(), String> {
             .long("as-lib")
             .help("Flag for exporting a solidity library instead of a solidity contract")
             .required(false)
-        )
+        ).arg(Arg::with_name("no-event")
+            .long("no-event")
+            .help("If set, verifyTx will not emit an event if the transaction successfully verified")
+            .required(false)
+    )
     )
     .subcommand(SubCommand::with_name("compute-witness")
         .about("Calculates a witness for a given constraint system")
@@ -533,6 +537,7 @@ fn cli() -> Result<(), String> {
 
                 let is_abiv2 = sub_matches.value_of("solidity-abi").unwrap() == "v2";
                 let is_as_lib = sub_matches.is_present("as-lib");
+                let emit_event = !sub_matches.is_present("no-event");
                 println!("Exporting verifier...");
 
                 // read vk file
@@ -546,7 +551,7 @@ fn cli() -> Result<(), String> {
                     .read_to_string(&mut vk)
                     .map_err(|why| format!("couldn't read {}: {}", input_path.display(), why))?;
 
-                let verifier = scheme.export_solidity_verifier(vk, is_abiv2, is_as_lib);
+                let verifier = scheme.export_solidity_verifier(vk, is_abiv2, is_as_lib, emit_event);
 
                 //write output file
                 let output_path = Path::new(sub_matches.value_of("output").unwrap());
