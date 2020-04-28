@@ -23,7 +23,7 @@ impl G16 {
 impl ProofSystem for G16 {
     fn setup(&self, program: ir::Prog<FieldPrime>) -> SetupKeypair {
         #[cfg(not(target_arch = "wasm32"))]
-        std::env::set_var("BELLMAN_VERBOSE", "0");
+            std::env::set_var("BELLMAN_VERBOSE", "0");
         println!("{}", G16_WARNING);
 
         let parameters = Computation::without_witness(program).setup();
@@ -59,7 +59,7 @@ impl ProofSystem for G16 {
         serialize::serialize_proof(&proof, &computation.public_inputs_values())
     }
 
-    fn export_solidity_verifier(&self, vk: String, is_abiv2: bool) -> String {
+    fn export_solidity_verifier(&self, vk: String, is_abiv2: bool, is_as_lib: bool) -> String {
         let mut lines = vk.lines();
 
         let (mut template_text, solidity_pairing_lib) = if is_abiv2 {
@@ -83,6 +83,8 @@ impl ProofSystem for G16 {
         let vk_gamma_abc_points_regex = Regex::new(r#"points"#).unwrap();
         let vk_gamma_abc_repeat_regex = Regex::new(r#"(<%vk_gamma_abc_pts%>)"#).unwrap();
         let vk_input_len_regex = Regex::new(r#"(<%vk_input_length%>)"#).unwrap();
+        let contract_or_library_regex = Regex::new(r#"<%contract_or_library%>"#).unwrap();
+        let is_internal_regex = Regex::new(r#"<%is_internal%>"#).unwrap();
 
         for _ in 0..4 {
             let current_line: &str = lines
@@ -140,6 +142,18 @@ impl ProofSystem for G16 {
 
         let re = Regex::new(r"(?P<v>0[xX][0-9a-fA-F]{64})").unwrap();
         template_text = re.replace_all(&template_text, "uint256($v)").to_string();
+
+        let (contract_or_library_text, is_internal_text) = if is_as_lib {
+            ("library", "internal")
+        } else {
+            ("contract", "public")
+        };
+        template_text = contract_or_library_regex
+            .replace(&template_text, contract_or_library_text)
+            .into_owned();
+        template_text = is_internal_regex
+            .replace(&template_text, is_internal_text)
+            .into_owned();
 
         format!(
             "{}{}{}",
@@ -201,7 +215,7 @@ mod serialize {
 }
 
 const CONTRACT_TEMPLATE_V2: &str = r#"
-contract Verifier {
+<%contract_or_library%> Verifier {
     using Pairing for *;
     struct VerifyingKey {
         Pairing.G1Point a;
@@ -245,7 +259,7 @@ contract Verifier {
     function verifyTx(
             Proof memory proof,
             uint[<%vk_input_length%>] memory input
-        ) public returns (bool r) {
+        ) <%is_internal%> returns (bool r) {
         uint[] memory inputValues = new uint[](input.length);
         for(uint i = 0; i < input.length; i++){
             inputValues[i] = input[i];
@@ -261,7 +275,7 @@ contract Verifier {
 "#;
 
 const CONTRACT_TEMPLATE: &str = r#"
-contract Verifier {
+<%contract_or_library%> Verifier {
     using Pairing for *;
     struct VerifyingKey {
         Pairing.G1Point a;
@@ -307,7 +321,7 @@ contract Verifier {
             uint[2][2] memory b,
             uint[2] memory c,
             uint[<%vk_input_length%>] memory input
-        ) public returns (bool r) {
+        ) <%is_internal%> returns (bool r) {
         Proof memory proof;
         proof.a = Pairing.G1Point(a[0], a[1]);
         proof.b = Pairing.G2Point([b[0][0], b[0][1]], [b[1][0], b[1][1]]);
