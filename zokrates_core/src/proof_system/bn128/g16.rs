@@ -283,7 +283,7 @@ contract Verifier {
         vk.gamma_abc = new Pairing.G1Point[](<%vk_gamma_abc_length%>);
         <%vk_gamma_abc_pts%>
     }
-    function verify(uint[] memory input, Proof memory proof) internal returns (uint) {
+    function verify(uint[] memory input, Proof memory proof) internal view returns (uint) {
         uint256 snark_scalar_field = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
         VerifyingKey memory vk = verifyingKey();
         require(input.length + 1 == vk.gamma_abc.length);
