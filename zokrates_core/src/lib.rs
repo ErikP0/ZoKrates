@@ -18,6 +18,7 @@ extern crate zokrates_common;
 extern crate zokrates_embed;
 extern crate zokrates_field;
 extern crate zokrates_pest_ast;
+extern crate itertools; // for Iterator::join
 
 mod embed;
 mod flatten;

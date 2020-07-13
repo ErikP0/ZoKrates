@@ -32,5 +32,5 @@ fn generate_proof() {
         .unwrap();
 
     let keys = G16::new().setup(program.clone());
-    let _proof = G16::new().generate_proof(program, witness, keys.pk);
+    let _proof = G16::new().generate_proof(program, witness, &keys.pk);
 }

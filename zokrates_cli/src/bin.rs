@@ -20,6 +20,7 @@ use zokrates_core::typed_absy::abi::Abi;
 use zokrates_core::typed_absy::{types::Signature, Type};
 use zokrates_field::field::{Field, FieldPrime};
 use zokrates_fs_resolver::FileSystemResolver;
+use zokrates_core::ir::Witness;
 
 fn main() {
     cli().unwrap_or_else(|e| {
@@ -505,23 +506,33 @@ fn cli() -> Result<(), String> {
             let pk_path = Path::new(sub_matches.value_of("proving-key-path").unwrap());
             let vk_path = Path::new(sub_matches.value_of("verification-key-path").unwrap());
 
-            // run setup phase
-            let keypair = scheme.setup(program);
+            fn do_setup<P: ProofSystem>(scheme: &P, program: ir::Prog<FieldPrime>, pk_path: &Path, vk_path: &Path) -> Result<(), String> {
+                // run setup phase
+                let keypair = scheme.setup(program);
 
-            // write verification key
-            let mut vk_file = File::create(vk_path)
-                .map_err(|why| format!("couldn't create {}: {}", vk_path.display(), why))?;
-            vk_file
-                .write(keypair.vk.as_ref())
-                .map_err(|why| format!("couldn't write to {}: {}", vk_path.display(), why))?;
+                // write verification key
+                let mut vk_file = File::create(vk_path)
+                    .map_err(|why| format!("couldn't create {}: {}", vk_path.display(), why))?;
+                vk_file
+                    .write(keypair.vk().as_ref())
+                    .map_err(|why| format!("couldn't write to {}: {}", vk_path.display(), why))?;
 
-            // write proving key
-            let mut pk_file = File::create(pk_path)
-                .map_err(|why| format!("couldn't create {}: {}", pk_path.display(), why))?;
-            pk_file
-                .write(keypair.pk.as_ref())
-                .map_err(|why| format!("couldn't write to {}: {}", pk_path.display(), why))?;
+                // write proving key
+                let mut pk_file = File::create(pk_path)
+                    .map_err(|why| format!("couldn't create {}: {}", pk_path.display(), why))?;
+                pk_file
+                    .write(keypair.pk().as_ref())
+                    .map_err(|why| format!("couldn't write to {}: {}", pk_path.display(), why))?;
+                Ok(())
+            }
 
+            match &scheme {
+                #[cfg(feature = "libsnark")]
+                Scheme::PGHR13(scheme) => do_setup(scheme, program, pk_path, vk_path),
+                #[cfg(feature = "libsnark")]
+                Scheme::GM17(scheme) => do_setup(scheme, program, pk_path, vk_path),
+                Scheme::G16(scheme) => do_setup(scheme, program, pk_path, vk_path),
+            }?;
             println!("Setup completed.");
         }
         ("export-verifier", Some(sub_matches)) => {
@@ -542,7 +553,19 @@ fn cli() -> Result<(), String> {
                     .read_to_string(&mut vk)
                     .map_err(|why| format!("couldn't read {}: {}", input_path.display(), why))?;
 
-                let verifier = scheme.export_solidity_verifier(vk, is_abiv2);
+                let verifier = match &scheme {
+                    #[cfg(feature = "libsnark")]
+                    Scheme::PGHR13(scheme) => {
+                        scheme.export_solidity_verifier(&scheme.new_verifying_key(&vk)?, is_abiv2)
+                    },
+                    #[cfg(feature = "libsnark")]
+                    Scheme::GM17(scheme) => {
+                        scheme.export_solidity_verifier(&scheme.new_verifying_key(&vk)?, is_abiv2)
+                    },
+                    Scheme::G16(scheme) => {
+                        scheme.export_solidity_verifier(&scheme.new_verifying_key(&vk)?, is_abiv2)
+                    },
+                };
 
                 //write output file
                 let output_path = Path::new(sub_matches.value_of("output").unwrap());
@@ -593,12 +616,27 @@ fn cli() -> Result<(), String> {
                 .read_to_end(&mut pk)
                 .map_err(|why| format!("couldn't read {}: {}", pk_path.display(), why))?;
 
-            let proof = scheme.generate_proof(program, witness, pk);
-            let mut proof_file = File::create(proof_path).unwrap();
 
-            proof_file
-                .write(proof.as_ref())
-                .map_err(|why| format!("couldn't write to {}: {}", proof_path.display(), why))?;
+
+            fn generate_proof<P: ProofSystem>(scheme: &P, program: ir::Prog<FieldPrime>, witness: Witness<FieldPrime>, pk: Vec<u8>, proof_path: &Path) -> Result<String, String> {
+                let pk = scheme.new_proving_key(pk)?;
+                let proof = scheme.generate_proof(program, witness, &pk);
+                let proof = serde_json::to_string(&proof).unwrap();
+
+                let mut proof_file = File::create(proof_path).unwrap();
+                proof_file
+                    .write(proof.to_string().as_ref())
+                    .map_err(|why| format!("couldn't write to {}: {}", proof_path.display(), why))?;
+                Ok(proof)
+            }
+
+            let proof = match &scheme {
+                #[cfg(feature = "libsnark")]
+                Scheme::PGHR13(scheme) => generate_proof(scheme, program, witness, pk, proof_path),
+                #[cfg(feature = "libsnark")]
+                Scheme::GM17(scheme) => generate_proof(scheme, program, witness, pk, proof_path),
+                Scheme::G16(scheme) => generate_proof(scheme, program, witness, pk, proof_path),
+            }?;
 
             println!("generate-proof successful: {}", format!("{}", proof));
         }
@@ -644,13 +682,21 @@ fn cli() -> Result<(), String> {
     Ok(())
 }
 
-fn get_scheme(scheme_str: &str) -> Result<&'static dyn ProofSystem, String> {
+enum Scheme {
+    #[cfg(feature = "libsnark")]
+    PGHR13(PGHR13),
+    #[cfg(feature = "libsnark")]
+    GM17(GM17),
+    G16(G16)
+}
+
+fn get_scheme(scheme_str: &str) -> Result<Scheme, String> {
     match scheme_str.to_lowercase().as_ref() {
         #[cfg(feature = "libsnark")]
-        "pghr13" => Ok(&PGHR13 {}),
+        "pghr13" => Ok(Scheme::PGHR13(PGHR13 {})),
         #[cfg(feature = "libsnark")]
-        "gm17" => Ok(&GM17 {}),
-        "g16" => Ok(&G16 {}),
+        "gm17" => Ok(Scheme::GM17(GM17 {})),
+        "g16" => Ok(Scheme::G16(G16 {})),
         s => Err(format!("Backend \"{}\" not supported", s)),
     }
 }
