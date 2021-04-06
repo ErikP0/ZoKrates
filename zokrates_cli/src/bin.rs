@@ -4,57 +4,14 @@
 // @author Dennis Kuhnert <dennis.kuhnert@campus.tu-berlin.de>
 // @date 2017
 
-#[macro_use]
-extern crate lazy_static;
-
-mod constants;
-mod helpers;
-mod ops;
-
-use clap::{App, AppSettings};
-use ops::*;
+use zokrates_cli::cli;
+use std::ffi::OsString;
 
 fn main() {
-    cli().unwrap_or_else(|e| {
+    cli::<Vec<_>, OsString>(None).unwrap_or_else(|e| {
         println!("{}", e);
         std::process::exit(1);
     })
-}
-
-fn cli() -> Result<(), String> {
-    // cli specification using clap library
-    let matches = App::new("ZoKrates")
-        .setting(AppSettings::SubcommandRequiredElseHelp)
-        .version(env!("CARGO_PKG_VERSION"))
-        .author("Jacob Eberhardt, Thibaut Schaeffer, Stefan Deml, Darko Macesic")
-        .about("Supports generation of zkSNARKs from high level language code including Smart Contracts for proof verification on the Ethereum Blockchain.\n'I know that I show nothing!'")
-        .subcommands(vec![
-            compile::subcommand(),
-            check::subcommand(),
-            compute_witness::subcommand(),
-            setup::subcommand(),
-            export_verifier::subcommand(),
-            generate_proof::subcommand(),
-            print_proof::subcommand(),
-            verify::subcommand()])
-        .get_matches();
-
-    match matches.subcommand() {
-        ("compile", Some(sub_matches)) => compile::exec(sub_matches)?,
-        ("check", Some(sub_matches)) => check::exec(sub_matches)?,
-        ("compute-witness", Some(sub_matches)) => compute_witness::exec(sub_matches)?,
-        #[cfg(any(feature = "bellman", feature = "ark", feature = "libsnark"))]
-        ("setup", Some(sub_matches)) => setup::exec(sub_matches)?,
-        ("export-verifier", Some(sub_matches)) => export_verifier::exec(sub_matches)?,
-        #[cfg(any(feature = "bellman", feature = "ark", feature = "libsnark"))]
-        ("generate-proof", Some(sub_matches)) => generate_proof::exec(sub_matches)?,
-        ("print-proof", Some(sub_matches)) => print_proof::exec(sub_matches)?,
-        #[cfg(any(feature = "bellman", feature = "ark", feature = "libsnark"))]
-        ("verify", Some(sub_matches)) => verify::exec(sub_matches)?,
-        _ => unreachable!(),
-    };
-
-    Ok(())
 }
 
 #[cfg(test)]
